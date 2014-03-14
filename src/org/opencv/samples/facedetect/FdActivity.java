@@ -4,6 +4,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
@@ -33,7 +35,7 @@ import android.view.WindowManager;
 public class FdActivity extends Activity implements CvCameraViewListener2 {
 
     private static final String    TAG                 = "OCVSample::Activity";
-    private static final Scalar    FACE_RECT_COLOR     = new Scalar(0, 255, 0, 255);
+    private static final Scalar    FACE_RECT_COLOR     = new Scalar(255, 255, 255);
     public static final int        JAVA_DETECTOR       = 0;
     public static final int        NATIVE_DETECTOR     = 1;
 
@@ -44,9 +46,18 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private MenuItem               mItemType;
 
     private Mat                    mRgba;
+    private Mat					   mRedPrev;
+    private Mat					   mGreenPrev;
+    private Mat					   mBluePrev;
+    private Mat					   mRedDiff;
+    private Mat					   mGreenDiff;
+    private Mat					   mBlueDiff;
     private Mat                    mGray;
+    private Mat					   mGrayFull;
     private Mat					   mGrayPrev;
     private Mat					   mGrayDiff;
+    private Mat					   mGrayDiffMasked;
+    private Mat					   mGrayMask;
     private Mat					   mMhi;
     private Mat					   mMmask;
     private Mat					   mMorientation;
@@ -83,7 +94,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
                         // load cascade file from application resources
                         InputStream is = getResources().openRawResource(R.raw.cascade);
                         File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
-                        mCascadeFile = new File(cascadeDir, "cascade.xml");
+                        mCascadeFile = new File(cascadeDir, "lbpcascade_frontalface.xml");
                         FileOutputStream os = new FileOutputStream(mCascadeFile);
 
                         byte[] buffer = new byte[4096];
@@ -165,8 +176,17 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     public void onCameraViewStarted(int width, int height) {
         mGray = new Mat();
         mRgba = new Mat();
+        mRedPrev = new Mat();
+        mGreenPrev = new Mat();
+        mBluePrev = new Mat();
+        mRedDiff = new Mat();
+        mGreenDiff = new Mat();
+        mBlueDiff = new Mat();
+        mGrayFull = new Mat();
         mGrayPrev = new Mat();
         mGrayDiff = new Mat();
+        mGrayDiffMasked = new Mat();
+        mGrayMask = new Mat();
         mMhi = new Mat();
         mMmask = new Mat();
         mMorientation = new Mat();
@@ -180,8 +200,17 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     public void onCameraViewStopped() {
         mGray.release();
         mRgba.release();
+        mRedPrev.release();
+        mGreenPrev.release();
+        mBluePrev.release();
+        mRedDiff.release();
+        mGreenDiff.release();
+        mBlueDiff.release();
         mGrayPrev.release();
         mGrayDiff.release();
+        mGrayFull.release();
+        mGrayDiffMasked.release();
+        mGrayMask.release();
         mMhi.release();
         mMmask.release();
         mMorientation.release();
@@ -194,29 +223,60 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mRgba = inputFrame.rgba();
         mGray = inputFrame.gray();
         
-        
+        Imgproc.resize(mRgba, mRgba, new Size(), 0.25, 0.25, Imgproc.INTER_LINEAR);
         Imgproc.resize(mGray, mGray, new Size(), 0.25, 0.25, Imgproc.INTER_LINEAR);
         
-       
+        List<Mat> mRgbaSplit = new ArrayList<Mat>(3);
+
         
+        Core.split(mRgba, mRgbaSplit);
+              
+        Mat	mRed = mRgbaSplit.get(0);
+        Mat mGreen = mRgbaSplit.get(1);
+        Mat mBlue = mRgbaSplit.get(2);
         
         if (mFrameNum == 1) {
-        	mGrayPrev = mGray.clone();
+        	mRedPrev = mRed.clone();
+        	mGreenPrev = mGreen.clone();
+        	mBluePrev = mBlue.clone();
         	mMhi = Mat.zeros(mGray.size(), CvType.CV_32F);
         }
         
-        Core.absdiff(mGray, mGrayPrev, mGrayDiff);
+        Core.absdiff(mRed, mRedPrev, mRedDiff);
+        Core.absdiff(mGreen, mGreenPrev, mGreenDiff);
+        Core.absdiff(mBlue, mBluePrev, mBlueDiff);
         
-        mGrayPrev = mGray.clone();
+        mRedPrev = mRed.clone();
+        mGreenPrev = mGreen.clone();
+        mBluePrev = mBlue.clone();
         
         mFrameNum ++;
         
-        Imgproc.threshold(mGrayDiff, mGrayDiff, 25, 255, Imgproc.THRESH_BINARY);
+        Imgproc.threshold(mRedDiff, mRedDiff, 15, 255, Imgproc.THRESH_BINARY);
+        Imgproc.threshold(mGreenDiff, mGreenDiff, 15, 255, Imgproc.THRESH_BINARY);
+        Imgproc.threshold(mBlueDiff, mBlueDiff, 15, 255, Imgproc.THRESH_BINARY);
         
-		Video.updateMotionHistory(mGrayDiff, mMhi, mFrameNum, 1);
+        mRgbaSplit.set(0, mRedDiff);
+        mRgbaSplit.set(1, mGreenDiff);
+        mRgbaSplit.set(2, mBlueDiff);
+        
+        Core.merge(mRgbaSplit, mRedDiff);
+        Imgproc.cvtColor(mRedDiff, mGrayDiff, Imgproc.COLOR_RGB2GRAY);
+        
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(23,23));
+        
+        Imgproc.erode(mGrayDiff, mGrayMask, kernel);
+        
+        for (int i = 1; i<=3; i++) {
+        	Imgproc.dilate(mGrayMask, mGrayMask, kernel);
+        }
+        
+        mGrayDiff.copyTo(mGrayDiffMasked, mGrayMask);
+        
+		Video.updateMotionHistory(mGrayDiffMasked, mMhi, mFrameNum, 1);
 		
 		
-		Video.calcMotionGradient(mMhi, mMmask, mMorientation, 1, 1, 5);
+		Video.calcMotionGradient(mMhi, mMmask, mMorientation, 1, 1, 3);
 			
 		Video.segmentMotion(mMhi, mSmask, mSBoundingBox, mFrameNum, 1);
 
@@ -228,7 +288,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 //            }
 //            mNativeDetector.setMinFaceSize(mAbsoluteFaceSize);
 //        }
-//
+////
 //        MatOfRect faces = new MatOfRect();
 //
 //        if (mDetectorType == JAVA_DETECTOR) {
@@ -244,18 +304,76 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 //            Log.e(TAG, "Detection method is not selected!");
 //        }
 //
-        Rect[] facesArray = mSBoundingBox.toArray();
-        for (int i = 0; i < facesArray.length; i++) {
-        	if (facesArray[i].area() > 200)
-        		Core.rectangle(mGray, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
+//        
+//        Rect[] facesArray = faces.toArray();
+//        
+//        for (int i = 0; i< facesArray.length; i++) {
+//        	Core.rectangle(mGray, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
+//        	Log.d(TAG, "Face Detected.");
+//        }
+//                
+        
+        Rect[] motionArray = mSBoundingBox.toArray();
+        double orientationAngle, orientationDegrees, orientationRadians;
+        double amplitudeInOrientation;
+        double whratio;
+        
+        
+        Mat localOrientation, localMmask, localMhi;
+        
+        for (int i = 0; i < motionArray.length; i++) {
+        	
+        
+        	
+        	localOrientation = mMorientation.submat(motionArray[i]);
+        	localMmask = mMmask.submat(motionArray[i]);
+        	localMhi = mMhi.submat(motionArray[i]);
+        			
+        	orientationAngle = Video.calcGlobalOrientation(localOrientation, localMmask, localMhi, mFrameNum, 1);
+        	orientationDegrees = orientationAngle;
+        	
+        	if (orientationAngle>=270)
+        		orientationAngle = 360 - orientationAngle;
+        	else if (orientationAngle>=180)
+        		orientationAngle = orientationAngle - 180;
+        	else if (orientationAngle>90)
+        		orientationAngle = 180 - orientationAngle;
+        	
+        	orientationRadians = orientationAngle * 2 * (Math.PI) / 360;
+        	
+        	if (orientationRadians < Math.atan2(motionArray[i].height,motionArray[i].width)) {
+        		amplitudeInOrientation = (motionArray[i].width/Math.cos(orientationRadians));
+        	}
+        	else {
+        		amplitudeInOrientation = (motionArray[i].height/Math.sin(orientationRadians));
+        	}
+        	
+        	if (motionArray[i].width > motionArray[i].height)
+        		whratio = motionArray[i].width/motionArray[i].height;
+        	else
+        		whratio = motionArray[i].height/motionArray[i].width;
+
+        	
+        	
+        	
+        	if (amplitudeInOrientation>70) {
+        		Core.rectangle(mGrayDiffMasked, motionArray[i].tl(), motionArray[i].br(), FACE_RECT_COLOR, 3);
+        		Log.d(TAG, "orientationAngle=" + Math.round(orientationDegrees) + " width=" + motionArray[i].width + " height=" + motionArray[i].height + " aO=" + amplitudeInOrientation);
+        		
+        	}
         }
             
 
-		Core.flip(mGray, mGray, 1);
+		Core.flip(mGrayDiffMasked, mGrayDiffMasked, 1);
 		
-		Imgproc.resize(mGray, mGray, new Size(), 4, 4, Imgproc.INTER_LINEAR);
-        
-        return mGray;
+		Imgproc.resize(mGrayDiffMasked, mGrayDiffMasked, new Size(), 4, 4, Imgproc.INTER_LINEAR);
+		
+//		Core.flip(mGrayDiffMasked, mGrayDiffMasked, 1);
+//		
+//		Imgproc.resize(mGrayDiffMasked, mGrayDiffMasked, new Size(), 4, 4, Imgproc.INTER_LINEAR);
+		
+		
+        return mGrayDiffMasked;
     }
 
     @Override
