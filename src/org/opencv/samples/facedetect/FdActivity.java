@@ -58,6 +58,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private Mat					   mGrayDiff;
     private Mat					   mGrayDiffMasked;
     private Mat					   mGrayMask;
+    private Mat					   mOutputImage;
     private Mat					   mMhi;
     private Mat					   mMmask;
     private Mat					   mMorientation;
@@ -191,6 +192,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mMmask = new Mat();
         mMorientation = new Mat();
         mSmask = new Mat();
+        mOutputImage = new Mat();
         
         mSBoundingBox = new MatOfRect();
        
@@ -216,6 +218,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mMorientation.release();
         mSmask.release();
         mSBoundingBox.release();
+        mOutputImage.release();
     }
 
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
@@ -225,6 +228,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         
         Imgproc.resize(mRgba, mRgba, new Size(), 0.25, 0.25, Imgproc.INTER_LINEAR);
         Imgproc.resize(mGray, mGray, new Size(), 0.25, 0.25, Imgproc.INTER_LINEAR);
+        
         
         List<Mat> mRgbaSplit = new ArrayList<Mat>(3);
 
@@ -365,7 +369,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             
 
 		Core.flip(mGrayDiffMasked, mGrayDiffMasked, 1);
-		
+
 		Imgproc.resize(mGrayDiffMasked, mGrayDiffMasked, new Size(), 4, 4, Imgproc.INTER_LINEAR);
 		
 //		Core.flip(mGrayDiffMasked, mGrayDiffMasked, 1);
