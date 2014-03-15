@@ -53,11 +53,13 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private Mat					   mGreenDiff;
     private Mat					   mBlueDiff;
     private Mat                    mGray;
+    private Mat					   mGrayStatic;
     private Mat					   mGrayFull;
     private Mat					   mGrayPrev;
     private Mat					   mGrayDiff;
     private Mat					   mGrayDiffMasked;
     private Mat					   mGrayMask;
+    private Mat					   mGrayInverseMask;
     private Mat					   mOutputImage;
     private Mat					   mMhi;
     private Mat					   mMmask;
@@ -75,7 +77,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private int					   mFrameNum = 1;
     private String[]               mDetectorName;
 
-    private float                  mRelativeFaceSize   = 0.2f;
+    private float                  mRelativeFaceSize   = 0.005f;
     private int                    mAbsoluteFaceSize   = 0;
 
     private CameraBridgeViewBase   mOpenCvCameraView;
@@ -93,7 +95,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
                     try {
                         // load cascade file from application resources
-                        InputStream is = getResources().openRawResource(R.raw.cascade);
+                        InputStream is = getResources().openRawResource(R.raw.lbpcascade_frontalface);
                         File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
                         mCascadeFile = new File(cascadeDir, "lbpcascade_frontalface.xml");
                         FileOutputStream os = new FileOutputStream(mCascadeFile);
@@ -187,7 +189,9 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mGrayPrev = new Mat();
         mGrayDiff = new Mat();
         mGrayDiffMasked = new Mat();
+        mGrayStatic = new Mat();
         mGrayMask = new Mat();
+        mGrayInverseMask = new Mat();
         mMhi = new Mat();
         mMmask = new Mat();
         mMorientation = new Mat();
@@ -213,6 +217,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mGrayFull.release();
         mGrayDiffMasked.release();
         mGrayMask.release();
+        mGrayInverseMask.release();
+        mGrayStatic.release();
         mMhi.release();
         mMmask.release();
         mMorientation.release();
@@ -267,15 +273,23 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         Core.merge(mRgbaSplit, mRedDiff);
         Imgproc.cvtColor(mRedDiff, mGrayDiff, Imgproc.COLOR_RGB2GRAY);
         
-        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(23,23));
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(7,7));
         
         Imgproc.erode(mGrayDiff, mGrayMask, kernel);
         
-        for (int i = 1; i<=3; i++) {
+        for (int i = 1; i<=1; i++) {
         	Imgproc.dilate(mGrayMask, mGrayMask, kernel);
         }
         
         mGrayDiff.copyTo(mGrayDiffMasked, mGrayMask);
+        
+        
+        Core.subtract(Mat.zeros(mGrayMask.size(), mGrayMask.type()), mGrayMask, mGrayInverseMask);
+
+        Core.scaleAdd(Mat.ones(mGrayMask.size(), mGrayMask.type()), 255, mGrayInverseMask, mGrayInverseMask);
+
+        mGray.copyTo(mGrayStatic,mGrayInverseMask);
+        
         
 		Video.updateMotionHistory(mGrayDiffMasked, mMhi, mFrameNum, 1);
 		
@@ -285,37 +299,37 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 		Video.segmentMotion(mMhi, mSmask, mSBoundingBox, mFrameNum, 1);
 
 
-//        if (mAbsoluteFaceSize == 0) {
-//            int height = mGray.rows();
-//            if (Math.round(height * mRelativeFaceSize) > 0) {
-//                mAbsoluteFaceSize = Math.round(height * mRelativeFaceSize);
-//            }
-//            mNativeDetector.setMinFaceSize(mAbsoluteFaceSize);
-//        }
-////
-//        MatOfRect faces = new MatOfRect();
-//
-//        if (mDetectorType == JAVA_DETECTOR) {
-//            if (mJavaDetector != null)
-//                mJavaDetector.detectMultiScale(mGray, faces, 1.1, 2, 2, // TODO: objdetect.CV_HAAR_SCALE_IMAGE
-//                        new Size(mAbsoluteFaceSize, mAbsoluteFaceSize), new Size());
-//        }
-//        else if (mDetectorType == NATIVE_DETECTOR) {
-//            if (mNativeDetector != null)
-//                mNativeDetector.detect(mGray, faces);
-//        }
-//        else {
-//            Log.e(TAG, "Detection method is not selected!");
-//        }
-//
-//        
-//        Rect[] facesArray = faces.toArray();
-//        
-//        for (int i = 0; i< facesArray.length; i++) {
-//        	Core.rectangle(mGray, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
-//        	Log.d(TAG, "Face Detected.");
-//        }
-//                
+        if (mAbsoluteFaceSize == 0) {
+            int height = mGray.rows();
+            if (Math.round(height * mRelativeFaceSize) > 0) {
+                mAbsoluteFaceSize = Math.round(height * mRelativeFaceSize);
+            }
+            mNativeDetector.setMinFaceSize(mAbsoluteFaceSize);
+        }
+
+        MatOfRect faces = new MatOfRect();
+
+        if (mDetectorType == JAVA_DETECTOR) {
+            if (mJavaDetector != null)
+                mJavaDetector.detectMultiScale(mGrayStatic, faces, 1.2, 2, 2, // TODO: objdetect.CV_HAAR_SCALE_IMAGE
+                        new Size(mAbsoluteFaceSize, mAbsoluteFaceSize), new Size());
+        }
+        else if (mDetectorType == NATIVE_DETECTOR) {
+            if (mNativeDetector != null)
+                mNativeDetector.detect(mGrayStatic, faces);
+        }
+        else {
+            Log.e(TAG, "Detection method is not selected!");
+        }
+
+        
+        Rect[] facesArray = faces.toArray();
+        
+        for (int i = 0; i< facesArray.length; i++) {
+        	Core.rectangle(mGrayDiffMasked, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
+        	Log.d(TAG, "Face Detected.");
+        }
+                
         
         Rect[] motionArray = mSBoundingBox.toArray();
         double orientationAngle, orientationDegrees, orientationRadians;
@@ -359,8 +373,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
         	
         	
-        	
-        	if (amplitudeInOrientation>70) {
+        	if (amplitudeInOrientation>65 && whratio > 1.2) {
         		Core.rectangle(mGrayDiffMasked, motionArray[i].tl(), motionArray[i].br(), FACE_RECT_COLOR, 3);
         		Log.d(TAG, "orientationAngle=" + Math.round(orientationDegrees) + " width=" + motionArray[i].width + " height=" + motionArray[i].height + " aO=" + amplitudeInOrientation);
         		
@@ -372,12 +385,9 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
 		Imgproc.resize(mGrayDiffMasked, mGrayDiffMasked, new Size(), 4, 4, Imgproc.INTER_LINEAR);
 		
-//		Core.flip(mGrayDiffMasked, mGrayDiffMasked, 1);
-//		
-//		Imgproc.resize(mGrayDiffMasked, mGrayDiffMasked, new Size(), 4, 4, Imgproc.INTER_LINEAR);
+	
 		
-		
-        return mGrayDiffMasked;
+        return mGrayDiff;
     }
 
     @Override
@@ -395,13 +405,13 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     public boolean onOptionsItemSelected(MenuItem item) {
         Log.i(TAG, "called onOptionsItemSelected; selected item: " + item);
         if (item == mItemFace50)
-            setMinFaceSize(0.5f);
+            setMinFaceSize(0.03f);
         else if (item == mItemFace40)
-            setMinFaceSize(0.4f);
+            setMinFaceSize(0.02f);
         else if (item == mItemFace30)
-            setMinFaceSize(0.3f);
+            setMinFaceSize(0.01f);
         else if (item == mItemFace20)
-            setMinFaceSize(0.2f);
+            setMinFaceSize(0.005f);
         else if (item == mItemType) {
             int tmpDetectorType = (mDetectorType + 1) % mDetectorName.length;
             item.setTitle(mDetectorName[tmpDetectorType]);
