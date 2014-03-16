@@ -21,6 +21,7 @@ import org.opencv.core.MatOfInt4;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.MatOfRect;
+import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
@@ -43,25 +44,38 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private static final String    TAG                 = "OCVSample::Activity";
     private static final Scalar    HAND_RECT_COLOR     = new Scalar(255, 0, 0);
     private static final Scalar	   HAND_CONTOUR_COLOR  = new Scalar(0, 255, 0);
+    private static final Scalar	   WHITE			   = new Scalar(255,255,255);
+    
+    private int					   mUndersamplingFactor = 4;
+    private int					   mErosionKernelSize = 36;
+    private float				   mMinBBArea = 0.01f;
 
 
     private Mat                    mRgba;
+    private Mat                    mGray;
+    
+    private Mat					   mOutputImage;
+    
     private Mat					   mRedPrev;
     private Mat					   mGreenPrev;
     private Mat					   mBluePrev;
     private Mat					   mRedDiff;
     private Mat					   mGreenDiff;
     private Mat					   mBlueDiff;
-    private Mat                    mGray;
-    private Mat					   mGrayStatic;
-    private Mat					   mGrayFull;
-    private Mat					   mGrayPrev;
+    
     private Mat					   mGrayDiff;
-    private Mat					   mGrayDiffMasked;
+    private Mat					   mGrayPrev;
+    
     private Mat					   mGrayMask;
+    
+    private Mat					   mGrayStatic;
+
+    private Mat					   mGrayDiffMasked;
+
     private Mat					   mGrayInverseMask;
-    private Mat					   mOutputImage;
+
     private Mat					   mFreezeFrame;
+    
     private Mat					   mMhi;
     private Mat					   mMmask;
     private Mat					   mMorientation;
@@ -74,6 +88,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     
 
     private int					   mFrameNum = 1;
+    private int					   mLastFrame = 1;
+    
 
     private float                  mRelativeFaceSizeMin   = 0.05f;
     private float                  mRelativeFaceSizeMax   = 0.5f;
@@ -190,8 +206,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mRedDiff = new Mat();
         mGreenDiff = new Mat();
         mBlueDiff = new Mat();
-        mGrayFull = new Mat();
         mGrayPrev = new Mat();
+        mGrayDiff = new Mat();
         mGrayDiff = new Mat();
         mGrayDiffMasked = new Mat();
         mGrayStatic = new Mat();
@@ -220,7 +236,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mBlueDiff.release();
         mGrayPrev.release();
         mGrayDiff.release();
-        mGrayFull.release();
+        mGrayDiff.release();
+
         mGrayDiffMasked.release();
         mGrayMask.release();
         mGrayInverseMask.release();
@@ -239,8 +256,18 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mRgba = inputFrame.rgba();
         mGray = inputFrame.gray();
         
-        Imgproc.resize(mRgba, mRgba, new Size(), 0.25, 0.25, Imgproc.INTER_LINEAR);
-        Imgproc.resize(mGray, mGray, new Size(), 0.25, 0.25, Imgproc.INTER_LINEAR);
+        Size origSize = mRgba.size();
+        
+        double shrinkFactor = 1/(double)mUndersamplingFactor;
+        //Log.d(TAG,"shrinkFactor = "+shrinkFactor);
+        
+        Imgproc.resize(mRgba, mRgba, new Size(), shrinkFactor, shrinkFactor, Imgproc.INTER_LINEAR);
+        Imgproc.resize(mGray, mGray, new Size(), shrinkFactor, shrinkFactor, Imgproc.INTER_LINEAR);
+        
+        int M,N;
+        
+        M = mGray.rows();
+        N = mGray.cols();
         
         Mat mRed = new Mat();
         Mat mGreen = new Mat();
@@ -256,8 +283,6 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         	mRedPrev = mRed.clone();
         	mGreenPrev = mGreen.clone();
         	mBluePrev = mBlue.clone();
-        	mMhi = Mat.zeros(mGray.size(), CvType.CV_32F);
-        	mFreezeFrame = mGray.clone();
         }
         
         Core.absdiff(mRed, mRedPrev, mRedDiff);
@@ -268,7 +293,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mGreenPrev = mGreen.clone();
         mBluePrev = mBlue.clone();
         
-        mFrameNum ++;
+
         
         Imgproc.threshold(mRedDiff, mRedDiff, 15, 255, Imgproc.THRESH_BINARY);
         Imgproc.threshold(mGreenDiff, mGreenDiff, 15, 255, Imgproc.THRESH_BINARY);
@@ -286,62 +311,77 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         Core.merge(mRgbaSplit, mRedDiff);
         Imgproc.cvtColor(mRedDiff, mGrayDiff, Imgproc.COLOR_RGB2GRAY);
         
-        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(5,5));
+
+        
+
+        
+        if (mFrameNum==1) {
+        	Log.d(TAG,"mFrameNum=" + mFrameNum);
+        	mMhi = Mat.zeros(mGrayDiff.size(), CvType.CV_32F);
+        	mFreezeFrame = mGrayDiff.clone();
+        }
+        
+        int kernelsize = Math.round(mErosionKernelSize/mUndersamplingFactor);
+        //Log.d(TAG,"kernelsize = "+kernelsize);
+        
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(kernelsize,kernelsize));
         
         Imgproc.erode(mGrayDiff, mGrayMask, kernel);
         
-        for (int i = 1; i<=1; i++) {
+        for (int i = 1; i<=3; i++) {
         	Imgproc.dilate(mGrayMask, mGrayMask, kernel);
         }
         
         Imgproc.threshold(mGrayMask, mGrayMask, 25, 255, Imgproc.THRESH_BINARY);
         
-        mGrayDiffMasked = Mat.zeros(mGrayDiffMasked.size(), mGrayDiffMasked.type());
-        mGrayDiff.copyTo(mGrayDiffMasked, mGrayMask);
         
-        Mat tmp = new Mat();
-
-        Core.scaleAdd(Mat.ones(mGrayDiff.size(), mGrayDiff.type()), 255, Mat.zeros(mGrayDiff.size(), mGrayDiff.type()), tmp);
-        Core.subtract(tmp, mGrayDiff, mGrayInverseMask);
+//        mGrayDiffMasked = Mat.zeros(mGrayDiff.size(), mGrayDiff.type());
+//        mGrayDiff.copyTo(mGrayDiffMasked, mGrayMask);
         
-
-
-        mGray.copyTo(mGrayStatic,mGrayInverseMask);
+//        Mat tmp = new Mat();
+//
+//        Core.scaleAdd(Mat.ones(mGrayDiff.size(), mGrayDiff.type()), 255, Mat.zeros(mGrayDiff.size(), mGrayDiff.type()), tmp);
+//        Core.subtract(tmp, mGrayDiff, mGrayInverseMask);
+//        
+//
+//
+//        mGray.copyTo(mGrayStatic,mGrayInverseMask);
         
         
-		Video.updateMotionHistory(mGrayMask, mMhi, mFrameNum, 2);
+        //Log.d(TAG,"size of mGrayMask="+mGrayMask.size()+" size of mMhi="+mMhi.size());
+		Video.updateMotionHistory(mGrayMask, mMhi, mFrameNum, 1);
 		
 		
-		Video.calcMotionGradient(mMhi, mMmask, mMorientation, 1, 2, 3);
+		Video.calcMotionGradient(mMhi, mMmask, mMorientation, 1, 1, 3);
 			
 		Video.segmentMotion(mMhi, mSmask, mSBoundingBox, mFrameNum, 1);
 
-		int height = mGray.rows();
-        if (mAbsoluteFaceSizeMin == 0) {  
-            if (Math.round(height * mRelativeFaceSizeMin) > 0) {
-                mAbsoluteFaceSizeMin = Math.round(height * mRelativeFaceSizeMin);
-            }
-        }
-        
-        if (mAbsoluteFaceSizeMax == 0) {
-            if (Math.round(height * mRelativeFaceSizeMax) > 0) {
-                mAbsoluteFaceSizeMax = Math.round(height * mRelativeFaceSizeMax);
-            }
-        }
-
-        MatOfRect faces = new MatOfRect();
-        
-        if (mJavaDetector != null)
-        	mJavaDetector.detectMultiScale(mGrayStatic, faces, 1.1, 2, 2,
-        			new Size(mAbsoluteFaceSizeMin, mAbsoluteFaceSizeMin), new Size(mAbsoluteFaceSizeMax, mAbsoluteFaceSizeMax));
-     
-        
-        Rect[] facesArray = faces.toArray();
-        
-        for (int i = 0; i< facesArray.length; i++) {
-        	Core.rectangle(mGray, facesArray[i].tl(), facesArray[i].br(), HAND_RECT_COLOR, 3);
-        	Log.d(TAG, "Face Detected.");
-        }
+//		int height = mGray.rows();
+//        if (mAbsoluteFaceSizeMin == 0) {  
+//            if (Math.round(height * mRelativeFaceSizeMin) > 0) {
+//                mAbsoluteFaceSizeMin = Math.round(height * mRelativeFaceSizeMin);
+//            }
+//        }
+//        
+//        if (mAbsoluteFaceSizeMax == 0) {
+//            if (Math.round(height * mRelativeFaceSizeMax) > 0) {
+//                mAbsoluteFaceSizeMax = Math.round(height * mRelativeFaceSizeMax);
+//            }
+//        }
+//
+//        MatOfRect faces = new MatOfRect();
+//        
+//        if (mJavaDetector != null)
+//        	mJavaDetector.detectMultiScale(mGrayStatic, faces, 1.1, 2, 2,
+//        			new Size(mAbsoluteFaceSizeMin, mAbsoluteFaceSizeMin), new Size(mAbsoluteFaceSizeMax, mAbsoluteFaceSizeMax));
+//     
+//        
+//        Rect[] facesArray = faces.toArray();
+//        
+//        for (int i = 0; i< facesArray.length; i++) {
+//        	Core.rectangle(mGray, facesArray[i].tl(), facesArray[i].br(), HAND_RECT_COLOR, 3);
+//        	Log.d(TAG, "Face Detected.");
+//        }
 
         
         Rect[] motionArray = mSBoundingBox.toArray();
@@ -352,6 +392,11 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         
         Mat localOrientation, localMmask, localMhi;
         
+
+        
+        double minArea = mMinBBArea * mGrayDiff.rows()*mGrayDiff.cols();
+
+
         for (int i = 0; i < motionArray.length; i++) {
         	
         
@@ -386,80 +431,196 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         	else
         		whratio = motionArray[i].height/motionArray[i].width;
 
+        	double aionormallized = 1000*amplitudeInOrientation/(Math.sqrt(motionArray[i].area()));
         	
-        	
-        	if (amplitudeInOrientation>85) {
-        		mFreezeFrame = mGrayMask.clone();
-        		Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
+        	if (aionormallized>1000 && motionArray[i].area()>minArea) {
         		
-        		Log.d(TAG, "orientationAngle=" + Math.round(orientationDegrees) + " width=" + motionArray[i].width + " height=" + motionArray[i].height + " aO=" + amplitudeInOrientation);
+                mFreezeFrame = mGrayDiff.clone();
+                Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
         		
-        		Mat handBoundingBox = mGrayMask.submat(motionArray[i]).clone();
+        		mLastFrame = mFrameNum;
         		
-        		//Imgproc.GaussianBlur(handBoundingBox, handBoundingBox, new Size(3, 3), 0);
+        		Log.d(TAG, "orientationAngle=" + Math.round(orientationDegrees) + " width=" + motionArray[i].width + " height=" + motionArray[i].height + " aO=" + aionormallized);
         		
-        		List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
+        		int x,y,w,h;
         		
-        		Imgproc.findContours(handBoundingBox, contours, new Mat(), Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+        		x = motionArray[i].x;
+        		y = motionArray[i].y;
+        		w = motionArray[i].width;
+        		h = motionArray[i].height;
         		
-        		double maxArea = -1;
-        		int maxAreaIdx = -1;
-        		MatOfPoint contour = new MatOfPoint();
+        		Rect handBBRect,origHandBBRect;
+        		double handBBRectMargin = 1;
         		
-        		for (int idx = 0; idx < contours.size(); idx++) {
-        			contour = contours.get(idx);
-        			double contourarea = Imgproc.contourArea(contour);
-        			if (contourarea > maxArea) {
-        				maxArea = contourarea;
-        				maxAreaIdx = idx;
-
-        				Log.i(TAG, "max contour idx: " + idx);
-        			}
+        		
+        		if (orientationDegrees>270+45)
+        			handBBRect = new Rect(x+w-h,y,(int)(handBBRectMargin*h),h);
+        		else if (orientationDegrees>180+45)
+        			handBBRect = new Rect(x,y,w,(int)(handBBRectMargin*w));
+        		else if (orientationDegrees>90+45)
+        			handBBRect = new Rect(x,y,(int)(handBBRectMargin*h),h);
+        		else if (orientationDegrees>0+45)
+        			handBBRect = new Rect(x,y+h-w,w,(int)(handBBRectMargin*w));
+        		else
+        			handBBRect = new Rect(x+w-h,y,(int)(handBBRectMargin*h),h);
+        		
+        		boolean handBBRectValid = true;
+        		
+        		// double check new BB isn't out of bounds
+        		if (handBBRect.x < 0)
+        			handBBRectValid = false;
+        		if (handBBRect.x>N)
+        			handBBRectValid = false;
+        		if (handBBRect.y < 0)
+        			handBBRectValid = false;
+        		if (handBBRect.y > M)
+        			handBBRectValid = false;
+        		if (handBBRect.x+handBBRect.width > N)
+        			handBBRectValid = false;
+        		if (handBBRect.y+handBBRect.height > M)
+        			handBBRectValid = false;
+        		
+        		if (handBBRectValid==false) {
+        			Log.d(TAG,"handBBRect Invalid"+handBBRect.x+","+handBBRect.y+","+handBBRect.width+","+handBBRect.height);
+        			Log.d(TAG,"handBBRect M="+M+" N="+N);
         		}
         		
-        		MatOfInt hull = new MatOfInt();
-        		MatOfInt4 defects = new MatOfInt4();
-
-        		if (maxAreaIdx > -1) // contour detected
-        		{
-        	
-	        		MatOfPoint2f new_contour = new MatOfPoint2f();
-	        		double epsilon = 5;// debug here
-	        		 
-	        		contours.get(maxAreaIdx).convertTo(new_contour, CvType.CV_32FC2);
-	        		//Processing on mMOP2f1 which is in type MatOfPoint2f
-	        		Imgproc.approxPolyDP(new_contour, new_contour, epsilon, true); 
-	        		//Convert back to MatOfPoint and put the new values back into the contours list
-	        		new_contour.convertTo(contour, CvType.CV_32S); 
-	        		 
-	        		Imgproc.convexHull(contour, hull);
-	
-	        		//Imgproc.convexityDefects(contour, hull, defects);
-	
-	        		long defect_num = defects.total();
+        		if (handBBRectValid) {
+        			
+        			
+        		
+	        		Mat handBoundingBox = mGrayDiff.submat(handBBRect).clone();
 	        		
-	        		// hull to matofpoint
-	        		MatOfPoint mopOut = new MatOfPoint();
-	        		mopOut.create((int)hull.size().height,1,CvType.CV_32SC2);
-
-	        		for(int j = 0; j < hull.size().height ; j++)
+	        		mFreezeFrame = handBoundingBox.clone();
+	        		Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
+	        		
+	        		//Imgproc.GaussianBlur(handBoundingBox, handBoundingBox, new Size(3, 3), 0);
+	        		
+	        		List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
+	        		
+	        		Imgproc.findContours(handBoundingBox, contours, new Mat(), Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+	        		
+	        		double maxArea = -1;
+	        		int maxAreaIdx = -1;
+	        		MatOfPoint contour = new MatOfPoint();
+	        		
+	        		for (int idx = 0; idx < contours.size(); idx++) {
+	        			contour = contours.get(idx);
+	        			double contourarea = Imgproc.contourArea(contour);
+	        			if (contourarea > maxArea) {
+	        				maxArea = contourarea;
+	        				maxAreaIdx = idx;
+	
+	        				Log.i(TAG, "max contour idx: " + idx);
+	        			}
+	        		}
+	        		
+	        		MatOfInt hull = new MatOfInt();
+	        		MatOfInt4 defects = new MatOfInt4();
+	
+	        		if (maxAreaIdx > -1) // contour detected
 	        		{
-	        		   int index = (int)hull.get(j, 0)[0];
-	        		   double[] point = new double[] {
-	        		       contour.get(index, 0)[0], contour.get(index, 0)[1]
-	        		   };
-	        		   mopOut.put(j, 0, point);
-	        		}        
-	        		
-	        		List <MatOfPoint> hull_list = new ArrayList<MatOfPoint>();
-	        		
-	        		hull_list.add(0,mopOut);
-	        		
-	        		Imgproc.drawContours(mFreezeFrame.submat(motionArray[i]), hull_list, 0, HAND_CONTOUR_COLOR, 2);
+	        	
+		        		MatOfPoint2f new_contour = new MatOfPoint2f();
+		        		double epsilon = 5;// debug here
+		        		 
+		        		contours.get(maxAreaIdx).convertTo(new_contour, CvType.CV_32FC2);
+		        		//Processing on mMOP2f1 which is in type MatOfPoint2f
+		        		Imgproc.approxPolyDP(new_contour, new_contour, epsilon, true); 
+		        		//Convert back to MatOfPoint and put the new values back into the contours list
+		        		new_contour.convertTo(contour, CvType.CV_32S); 
+		        		 
+		        		Imgproc.convexHull(contour, hull);
+		
+		        		Imgproc.convexityDefects(contour, hull, defects);
+		
+		        		long defect_num = defects.total();
+		        		
+		        		// hull to matofpoint
+		        		MatOfPoint mopOut = new MatOfPoint();
+		        		mopOut.create((int)hull.size().height,1,CvType.CV_32SC2);
+	
+		        		for(int j = 0; j < hull.size().height ; j++)
+		        		{
+		        		   int index = (int)hull.get(j, 0)[0];
+		        		   double[] point = new double[] {
+		        		       contour.get(index, 0)[0], contour.get(index, 0)[1]
+		        		   };
+		        		   mopOut.put(j, 0, point);
+		        		}        
+		        		
+		        		List <MatOfPoint> hull_list = new ArrayList<MatOfPoint>();
+		        		
+		        		hull_list.add(0,mopOut);
+		        		
+		        		Imgproc.drawContours(mFreezeFrame, hull_list, 0, HAND_CONTOUR_COLOR, 2);
+		        		
+		        		// defect point reduce
+		        		List<Point> vertex_point_list = new ArrayList<Point>();
+		        		List<Point> defect_point_list = new ArrayList<Point>();
+		        		int[] depth_list = new int[(int) defect_num];
+
+		        		int DEPTH_THRESHOLD = 30000;
+		        		int real_defect_num = 0;
+
+		        		double[] point = new double[] { 0, 0 };
+		        		Point current = new Point(point);
+
+		        		int depth, index;
+		        		
+		        		Log.d(TAG,"Defect_num = "+ defect_num);
+		        		
+		        		for (int j = 0; j < (int) defect_num; j++) {
+
+			        		depth = (int) defects.get(j, 0)[3];
+//			        		if (depth < DEPTH_THRESHOLD)
+//			        			continue;
+	
+			        		Log.d(TAG, "defect depth=" + depth);
+			        		depth_list[real_defect_num] = depth;
+			        		real_defect_num++;
+	
+			        		index = (int) defects.get(j, 0)[0];
+			        		 
+			        		current = new Point(contour.get(index, 0)[0],contour.get(index, 0)[1]);
+			        		 
+			        		// current.x = contour.get(index, 0)[0];
+			        		// current.y = contour.get(index, 0)[1];
+	
+			        		vertex_point_list.add(current);
+	
+			        		index = (int) defects.get(j, 0)[2];
+	
+			        		// current.x = contour.get(index, 0)[0];
+			        		// current.y = contour.get(index, 0)[1];
+			        		current = new Point(contour.get(index, 0)[0],contour.get(index, 0)[1]);
+			        		defect_point_list.add(current);
+
+		        		}
+		        		 
+		        		Point p = new Point();
+		        		p.x = 100;
+		        		p.y = 100;
+		        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num-1), p,
+		        		Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+		        		 
+		        		System.out.printf("real number defect =%d\n",real_defect_num);
+
+		        		for (int k = 0; k < real_defect_num; k++) {
+		        		Point vertex = vertex_point_list.get(k);
+		        		Point defect = defect_point_list.get(k);
+		        		Core.circle(mFreezeFrame, vertex, 2, new Scalar(10, 25, 155), 2);
+		        		Core.circle(mFreezeFrame, defect, 2, new Scalar(280, 0, 55), 2);
+
+		        		// double fontScale = 2;
+		        		// Core.putText(rgba, Integer.toString(depth_list[i]), defect,
+		        		// Core.FONT_HERSHEY_SIMPLEX, fontScale, mWhilte, 3);
+
+		        		}
+	        		}
         		}
         		
-        		Core.rectangle(mFreezeFrame, motionArray[i].tl(), motionArray[i].br(), HAND_RECT_COLOR, 2);
-        		
+        		Core.rectangle(mFreezeFrame, handBBRect.tl(), handBBRect.br(), HAND_RECT_COLOR, 2);
         		
                 
         	}
@@ -472,18 +633,22 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         
 		Core.flip(mFreezeFrame, flippedOutput, 1);
 
-		Imgproc.resize(flippedOutput, mOutputImage, new Size(), 4, 4, Imgproc.INTER_LINEAR);
+		//Imgproc.resize(flippedOutput, mOutputImage, new Size(), mUndersamplingFactor, mUndersamplingFactor, Imgproc.INTER_LINEAR);
+		Imgproc.resize(flippedOutput, mOutputImage, origSize, 0, 0, Imgproc.INTER_LINEAR);
+		
 		
         mRed.release();
         mGreen.release();
         mBlue.release();
         flippedOutput.release();
-        tmp.release();
+//        tmp.release();
 
         kernel.release();
         
-        faces.release();
+//        faces.release();
         mRgbaSplit.clear();
+        
+        mFrameNum ++;
 		
         return mOutputImage;
     }
