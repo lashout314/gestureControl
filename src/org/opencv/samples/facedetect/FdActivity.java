@@ -16,6 +16,10 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfInt;
+import org.opencv.core.MatOfInt4;
+import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.MatOfRect;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
@@ -26,24 +30,20 @@ import org.opencv.video.Video;
 
 import android.app.Activity;
 import android.content.Context;
+import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.WindowManager;
+import android.widget.TextView;
 
 public class FdActivity extends Activity implements CvCameraViewListener2 {
 
     private static final String    TAG                 = "OCVSample::Activity";
-    private static final Scalar    FACE_RECT_COLOR     = new Scalar(255, 255, 255);
-    public static final int        JAVA_DETECTOR       = 0;
-    public static final int        NATIVE_DETECTOR     = 1;
+    private static final Scalar    HAND_RECT_COLOR     = new Scalar(255, 0, 0);
+    private static final Scalar	   HAND_CONTOUR_COLOR  = new Scalar(0, 255, 0);
 
-    private MenuItem               mItemFace50;
-    private MenuItem               mItemFace40;
-    private MenuItem               mItemFace30;
-    private MenuItem               mItemFace20;
-    private MenuItem               mItemType;
 
     private Mat                    mRgba;
     private Mat					   mRedPrev;
@@ -61,6 +61,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private Mat					   mGrayMask;
     private Mat					   mGrayInverseMask;
     private Mat					   mOutputImage;
+    private Mat					   mFreezeFrame;
     private Mat					   mMhi;
     private Mat					   mMmask;
     private Mat					   mMorientation;
@@ -70,17 +71,24 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     
     private File                   mCascadeFile;
     private CascadeClassifier      mJavaDetector;
-    private DetectionBasedTracker  mNativeDetector;
     
 
-    private int                    mDetectorType       = JAVA_DETECTOR;
     private int					   mFrameNum = 1;
-    private String[]               mDetectorName;
 
-    private float                  mRelativeFaceSize   = 0.005f;
-    private int                    mAbsoluteFaceSize   = 0;
+    private float                  mRelativeFaceSizeMin   = 0.05f;
+    private float                  mRelativeFaceSizeMax   = 0.5f;
+    
+    private int                    mAbsoluteFaceSizeMin   = 0;
+    private int					   mAbsoluteFaceSizeMax	  = 0;
 
     private CameraBridgeViewBase   mOpenCvCameraView;
+    
+    private MediaPlayer mediaPlayer;
+    private TextView songName;
+    private int mVolume = 6, maxVolume = 10, minVolume = 2;
+    private double startTime = 0;
+    private double endTime = 0;
+    
 
     private BaseLoaderCallback  mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -115,7 +123,6 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
                         } else
                             Log.i(TAG, "Loaded cascade classifier from " + mCascadeFile.getAbsolutePath());
 
-                        mNativeDetector = new DetectionBasedTracker(mCascadeFile.getAbsolutePath(), 0);
 
                         cascadeDir.delete();
 
@@ -135,11 +142,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     };
 
     public FdActivity() {
-        mDetectorName = new String[2];
-        mDetectorName[JAVA_DETECTOR] = "Java";
-        mDetectorName[NATIVE_DETECTOR] = "Native (tracking)";
 
-        Log.i(TAG, "Instantiated new " + this.getClass());
     }
 
     /** Called when the activity is first created. */
@@ -154,6 +157,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.fd_activity_surface_view);
         mOpenCvCameraView.setCameraIndex(1);
         mOpenCvCameraView.setCvCameraViewListener(this);
+        
+        mediaPlayer = MediaPlayer.create(this, R.raw.levels);
     }
 
     @Override
@@ -197,6 +202,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mMorientation = new Mat();
         mSmask = new Mat();
         mOutputImage = new Mat();
+        mFreezeFrame = new Mat();
         
         mSBoundingBox = new MatOfRect();
        
@@ -225,6 +231,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mSmask.release();
         mSBoundingBox.release();
         mOutputImage.release();
+        mFreezeFrame.release();
     }
 
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
@@ -235,21 +242,22 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         Imgproc.resize(mRgba, mRgba, new Size(), 0.25, 0.25, Imgproc.INTER_LINEAR);
         Imgproc.resize(mGray, mGray, new Size(), 0.25, 0.25, Imgproc.INTER_LINEAR);
         
-        
-        List<Mat> mRgbaSplit = new ArrayList<Mat>(3);
+        Mat mRed = new Mat();
+        Mat mGreen = new Mat();
+        Mat mBlue = new Mat();
 
+        Core.extractChannel(mRgba, mRed, 0);
+        Core.extractChannel(mRgba, mGreen, 1);
+        Core.extractChannel(mRgba, mBlue, 2);
         
-        Core.split(mRgba, mRgbaSplit);
-              
-        Mat	mRed = mRgbaSplit.get(0);
-        Mat mGreen = mRgbaSplit.get(1);
-        Mat mBlue = mRgbaSplit.get(2);
+             
         
         if (mFrameNum == 1) {
         	mRedPrev = mRed.clone();
         	mGreenPrev = mGreen.clone();
         	mBluePrev = mBlue.clone();
         	mMhi = Mat.zeros(mGray.size(), CvType.CV_32F);
+        	mFreezeFrame = mGray.clone();
         }
         
         Core.absdiff(mRed, mRedPrev, mRedDiff);
@@ -266,14 +274,19 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         Imgproc.threshold(mGreenDiff, mGreenDiff, 15, 255, Imgproc.THRESH_BINARY);
         Imgproc.threshold(mBlueDiff, mBlueDiff, 15, 255, Imgproc.THRESH_BINARY);
         
-        mRgbaSplit.set(0, mRedDiff);
-        mRgbaSplit.set(1, mGreenDiff);
-        mRgbaSplit.set(2, mBlueDiff);
+        List<Mat> mRgbaSplit = new ArrayList<Mat>(3);
+        
+        
+        mRgbaSplit.add(0, mRedDiff);
+        mRgbaSplit.add(1, mGreenDiff);
+        mRgbaSplit.add(2, mBlueDiff);
+        
+        
         
         Core.merge(mRgbaSplit, mRedDiff);
         Imgproc.cvtColor(mRedDiff, mGrayDiff, Imgproc.COLOR_RGB2GRAY);
         
-        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(7,7));
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(5,5));
         
         Imgproc.erode(mGrayDiff, mGrayMask, kernel);
         
@@ -281,61 +294,61 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         	Imgproc.dilate(mGrayMask, mGrayMask, kernel);
         }
         
+        Imgproc.threshold(mGrayMask, mGrayMask, 25, 255, Imgproc.THRESH_BINARY);
+        
+        mGrayDiffMasked = Mat.zeros(mGrayDiffMasked.size(), mGrayDiffMasked.type());
         mGrayDiff.copyTo(mGrayDiffMasked, mGrayMask);
         
-        
-        Core.subtract(Mat.zeros(mGrayMask.size(), mGrayMask.type()), mGrayMask, mGrayInverseMask);
+        Mat tmp = new Mat();
 
-        Core.scaleAdd(Mat.ones(mGrayMask.size(), mGrayMask.type()), 255, mGrayInverseMask, mGrayInverseMask);
+        Core.scaleAdd(Mat.ones(mGrayDiff.size(), mGrayDiff.type()), 255, Mat.zeros(mGrayDiff.size(), mGrayDiff.type()), tmp);
+        Core.subtract(tmp, mGrayDiff, mGrayInverseMask);
+        
+
 
         mGray.copyTo(mGrayStatic,mGrayInverseMask);
         
         
-		Video.updateMotionHistory(mGrayDiffMasked, mMhi, mFrameNum, 1);
+		Video.updateMotionHistory(mGrayMask, mMhi, mFrameNum, 2);
 		
 		
-		Video.calcMotionGradient(mMhi, mMmask, mMorientation, 1, 1, 3);
+		Video.calcMotionGradient(mMhi, mMmask, mMorientation, 1, 2, 3);
 			
 		Video.segmentMotion(mMhi, mSmask, mSBoundingBox, mFrameNum, 1);
 
-
-        if (mAbsoluteFaceSize == 0) {
-            int height = mGray.rows();
-            if (Math.round(height * mRelativeFaceSize) > 0) {
-                mAbsoluteFaceSize = Math.round(height * mRelativeFaceSize);
+		int height = mGray.rows();
+        if (mAbsoluteFaceSizeMin == 0) {  
+            if (Math.round(height * mRelativeFaceSizeMin) > 0) {
+                mAbsoluteFaceSizeMin = Math.round(height * mRelativeFaceSizeMin);
             }
-            mNativeDetector.setMinFaceSize(mAbsoluteFaceSize);
+        }
+        
+        if (mAbsoluteFaceSizeMax == 0) {
+            if (Math.round(height * mRelativeFaceSizeMax) > 0) {
+                mAbsoluteFaceSizeMax = Math.round(height * mRelativeFaceSizeMax);
+            }
         }
 
         MatOfRect faces = new MatOfRect();
-
-        if (mDetectorType == JAVA_DETECTOR) {
-            if (mJavaDetector != null)
-                mJavaDetector.detectMultiScale(mGrayStatic, faces, 1.2, 2, 2, // TODO: objdetect.CV_HAAR_SCALE_IMAGE
-                        new Size(mAbsoluteFaceSize, mAbsoluteFaceSize), new Size());
-        }
-        else if (mDetectorType == NATIVE_DETECTOR) {
-            if (mNativeDetector != null)
-                mNativeDetector.detect(mGrayStatic, faces);
-        }
-        else {
-            Log.e(TAG, "Detection method is not selected!");
-        }
-
+        
+        if (mJavaDetector != null)
+        	mJavaDetector.detectMultiScale(mGrayStatic, faces, 1.1, 2, 2,
+        			new Size(mAbsoluteFaceSizeMin, mAbsoluteFaceSizeMin), new Size(mAbsoluteFaceSizeMax, mAbsoluteFaceSizeMax));
+     
         
         Rect[] facesArray = faces.toArray();
         
         for (int i = 0; i< facesArray.length; i++) {
-        	Core.rectangle(mGrayDiffMasked, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
+        	Core.rectangle(mGray, facesArray[i].tl(), facesArray[i].br(), HAND_RECT_COLOR, 3);
         	Log.d(TAG, "Face Detected.");
         }
-                
+
         
         Rect[] motionArray = mSBoundingBox.toArray();
         double orientationAngle, orientationDegrees, orientationRadians;
         double amplitudeInOrientation;
         double whratio;
-        
+
         
         Mat localOrientation, localMmask, localMhi;
         
@@ -354,8 +367,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         		orientationAngle = 360 - orientationAngle;
         	else if (orientationAngle>=180)
         		orientationAngle = orientationAngle - 180;
-        	else if (orientationAngle>90)
+        	else if (orientationAngle>90) {
         		orientationAngle = 180 - orientationAngle;
+        		//mediaPlayer.start();
+        	}
         	
         	orientationRadians = orientationAngle * 2 * (Math.PI) / 360;
         	
@@ -373,69 +388,117 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
         	
         	
-        	if (amplitudeInOrientation>65 && whratio > 1.2) {
-        		Core.rectangle(mGrayDiffMasked, motionArray[i].tl(), motionArray[i].br(), FACE_RECT_COLOR, 3);
+        	if (amplitudeInOrientation>85) {
+        		mFreezeFrame = mGrayMask.clone();
+        		Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
+        		
         		Log.d(TAG, "orientationAngle=" + Math.round(orientationDegrees) + " width=" + motionArray[i].width + " height=" + motionArray[i].height + " aO=" + amplitudeInOrientation);
         		
+        		Mat handBoundingBox = mGrayMask.submat(motionArray[i]).clone();
+        		
+        		//Imgproc.GaussianBlur(handBoundingBox, handBoundingBox, new Size(3, 3), 0);
+        		
+        		List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
+        		
+        		Imgproc.findContours(handBoundingBox, contours, new Mat(), Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+        		
+        		double maxArea = -1;
+        		int maxAreaIdx = -1;
+        		MatOfPoint contour = new MatOfPoint();
+        		
+        		for (int idx = 0; idx < contours.size(); idx++) {
+        			contour = contours.get(idx);
+        			double contourarea = Imgproc.contourArea(contour);
+        			if (contourarea > maxArea) {
+        				maxArea = contourarea;
+        				maxAreaIdx = idx;
+
+        				Log.i(TAG, "max contour idx: " + idx);
+        			}
+        		}
+        		
+        		MatOfInt hull = new MatOfInt();
+        		MatOfInt4 defects = new MatOfInt4();
+
+        		if (maxAreaIdx > -1) // contour detected
+        		{
+        	
+	        		MatOfPoint2f new_contour = new MatOfPoint2f();
+	        		double epsilon = 5;// debug here
+	        		 
+	        		contours.get(maxAreaIdx).convertTo(new_contour, CvType.CV_32FC2);
+	        		//Processing on mMOP2f1 which is in type MatOfPoint2f
+	        		Imgproc.approxPolyDP(new_contour, new_contour, epsilon, true); 
+	        		//Convert back to MatOfPoint and put the new values back into the contours list
+	        		new_contour.convertTo(contour, CvType.CV_32S); 
+	        		 
+	        		Imgproc.convexHull(contour, hull);
+	
+	        		//Imgproc.convexityDefects(contour, hull, defects);
+	
+	        		long defect_num = defects.total();
+	        		
+	        		// hull to matofpoint
+	        		MatOfPoint mopOut = new MatOfPoint();
+	        		mopOut.create((int)hull.size().height,1,CvType.CV_32SC2);
+
+	        		for(int j = 0; j < hull.size().height ; j++)
+	        		{
+	        		   int index = (int)hull.get(j, 0)[0];
+	        		   double[] point = new double[] {
+	        		       contour.get(index, 0)[0], contour.get(index, 0)[1]
+	        		   };
+	        		   mopOut.put(j, 0, point);
+	        		}        
+	        		
+	        		List <MatOfPoint> hull_list = new ArrayList<MatOfPoint>();
+	        		
+	        		hull_list.add(0,mopOut);
+	        		
+	        		Imgproc.drawContours(mFreezeFrame.submat(motionArray[i]), hull_list, 0, HAND_CONTOUR_COLOR, 2);
+        		}
+        		
+        		Core.rectangle(mFreezeFrame, motionArray[i].tl(), motionArray[i].br(), HAND_RECT_COLOR, 2);
+        		
+        		
+                
         	}
         }
             
 
-		Core.flip(mGrayDiffMasked, mGrayDiffMasked, 1);
+        
+        
+        Mat flippedOutput = new Mat();
+        
+		Core.flip(mFreezeFrame, flippedOutput, 1);
 
-		Imgproc.resize(mGrayDiffMasked, mGrayDiffMasked, new Size(), 4, 4, Imgproc.INTER_LINEAR);
+		Imgproc.resize(flippedOutput, mOutputImage, new Size(), 4, 4, Imgproc.INTER_LINEAR);
 		
-	
+        mRed.release();
+        mGreen.release();
+        mBlue.release();
+        flippedOutput.release();
+        tmp.release();
+
+        kernel.release();
+        
+        faces.release();
+        mRgbaSplit.clear();
 		
-        return mGrayDiff;
+        return mOutputImage;
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        Log.i(TAG, "called onCreateOptionsMenu");
-        mItemFace50 = menu.add("Face size 50%");
-        mItemFace40 = menu.add("Face size 40%");
-        mItemFace30 = menu.add("Face size 30%");
-        mItemFace20 = menu.add("Face size 20%");
-        mItemType   = menu.add(mDetectorName[mDetectorType]);
+
         return true;
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        Log.i(TAG, "called onOptionsItemSelected; selected item: " + item);
-        if (item == mItemFace50)
-            setMinFaceSize(0.03f);
-        else if (item == mItemFace40)
-            setMinFaceSize(0.02f);
-        else if (item == mItemFace30)
-            setMinFaceSize(0.01f);
-        else if (item == mItemFace20)
-            setMinFaceSize(0.005f);
-        else if (item == mItemType) {
-            int tmpDetectorType = (mDetectorType + 1) % mDetectorName.length;
-            item.setTitle(mDetectorName[tmpDetectorType]);
-            setDetectorType(tmpDetectorType);
-        }
+   
         return true;
     }
 
-    private void setMinFaceSize(float faceSize) {
-        mRelativeFaceSize = faceSize;
-        mAbsoluteFaceSize = 0;
-    }
-
-    private void setDetectorType(int type) {
-        if (mDetectorType != type) {
-            mDetectorType = type;
-
-            if (type == NATIVE_DETECTOR) {
-                Log.i(TAG, "Detection Based Tracker enabled");
-                mNativeDetector.start();
-            } else {
-                Log.i(TAG, "Cascade detector enabled");
-                mNativeDetector.stop();
-            }
-        }
-    }
+    
 }
