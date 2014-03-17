@@ -530,55 +530,55 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 //        			Log.d(TAG,"mRgbasize = "+mRgbaPrev.size()+" "+origHandBBRect.x + " "+origHandBBRect.y + " "+origHandBBRect.size());
 //        			
 //        			
-//        			Mat rgbPrevBB = mRgbaPrev.submat(origHandBBRect);
-//        			Mat rgbBB = inputFrame.rgba().submat(origHandBBRect);
-//        			
-//        			Mat rPrevBB = new Mat();
-//        			Mat rBB = new Mat();
-//        			
-//        			Mat gPrevBB = new Mat();
-//        			Mat gBB = new Mat();
-//        			
-//        			Mat bPrevBB = new Mat();
-//        			Mat bBB = new Mat();
-//        			
-//        			Mat rDiff = new Mat();
-//        			Mat gDiff = new Mat();
-//        			Mat bDiff = new Mat();
-//        			
-//        			Core.extractChannel(rgbPrevBB, rPrevBB, 0);
-//        			Core.extractChannel(rgbPrevBB, gPrevBB, 1);
-//        			Core.extractChannel(rgbPrevBB, bPrevBB, 2);
-//        			
-//        			Core.extractChannel(rgbBB, rBB, 0);
-//        			Core.extractChannel(rgbBB, gBB, 1);
-//        			Core.extractChannel(rgbBB, bBB, 2);
-//        			
-//        			Core.absdiff(rBB, rPrevBB, rDiff);
-//        	        Core.absdiff(gBB, gPrevBB, gDiff);
-//        	        Core.absdiff(bBB, bPrevBB, bDiff);
-//        	        
-//        	        Imgproc.threshold(rDiff, rDiff, 25, 255, Imgproc.THRESH_BINARY);
-//        	        Imgproc.threshold(gDiff, gDiff, 25, 255, Imgproc.THRESH_BINARY);
-//        	        Imgproc.threshold(bDiff, bDiff, 25, 255, Imgproc.THRESH_BINARY);
-//        	        
-//        	        List<Mat> rgbBBSplit = new ArrayList<Mat>(3);
-//        	        
-//        	        
-//        	        rgbBBSplit.add(0, rDiff);
-//        	        rgbBBSplit.add(1, rDiff);
-//        	        rgbBBSplit.add(2, bDiff);
-//        	        
-//        	        Mat handBoundingBox = new Mat();
-//        	        
-//        	        rgbBB.release();
-//        	        
-//        	        Core.merge(rgbBBSplit, rgbBB);
-//        	        Imgproc.cvtColor(rgbBB, handBoundingBox, Imgproc.COLOR_RGB2GRAY);
+        			Mat rgbPrevBB = mRgbaPrev.submat(origHandBBRect);
+        			Mat rgbBB = mRgbaFull.submat(origHandBBRect);
+        			
+        			Mat rPrevBB = new Mat();
+        			Mat rBB = new Mat();
+        			
+        			Mat gPrevBB = new Mat();
+        			Mat gBB = new Mat();
+        			
+        			Mat bPrevBB = new Mat();
+        			Mat bBB = new Mat();
+        			
+        			Mat rDiff = new Mat();
+        			Mat gDiff = new Mat();
+        			Mat bDiff = new Mat();
+        			
+        			Core.extractChannel(rgbPrevBB, rPrevBB, 0);
+        			Core.extractChannel(rgbPrevBB, gPrevBB, 1);
+        			Core.extractChannel(rgbPrevBB, bPrevBB, 2);
+        			
+        			Core.extractChannel(rgbBB, rBB, 0);
+        			Core.extractChannel(rgbBB, gBB, 1);
+        			Core.extractChannel(rgbBB, bBB, 2);
+        			
+        			Core.absdiff(rBB, rPrevBB, rDiff);
+        	        Core.absdiff(gBB, gPrevBB, gDiff);
+        	        Core.absdiff(bBB, bPrevBB, bDiff);
+        	        
+        	        Imgproc.threshold(rDiff, rDiff, 25, 255, Imgproc.THRESH_BINARY);
+        	        Imgproc.threshold(gDiff, gDiff, 25, 255, Imgproc.THRESH_BINARY);
+        	        Imgproc.threshold(bDiff, bDiff, 25, 255, Imgproc.THRESH_BINARY);
+        	        
+        	        List<Mat> rgbBBSplit = new ArrayList<Mat>(3);
+        	        
+        	        
+        	        rgbBBSplit.add(0, rDiff);
+        	        rgbBBSplit.add(1, rDiff);
+        	        rgbBBSplit.add(2, bDiff);
+        	        
+        	        Mat handBoundingBox = new Mat();
+        	        
+        	        rgbBB.release();
+        	        
+        	        Core.merge(rgbBBSplit, rgbBB);
+        	        Imgproc.cvtColor(rgbBB, handBoundingBox, Imgproc.COLOR_RGB2GRAY);
         	        
 
         		
-        			Mat handBoundingBox = mFGmask.submat(origHandBBRect);
+        			//Mat handBoundingBox = mFGmask.submat(origHandBBRect);
         			
 //        	        Mat kernelBB = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3,3));
 //        	        
@@ -589,12 +589,12 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         	     
         	        //Imgproc.threshold(handBoundingBox, handBoundingBox, 15, 255, Imgproc.THRESH_BINARY);
         			
-//	        		mFreezeFrame.release();
-//	        		mFreezeFrame = handBoundingBox.clone();
-//	        		Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
+	        		mFreezeFrame.release();
+	        		mFreezeFrame = handBoundingBox.clone();
+	        		Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
         			
-        			mFreezeFrame.release();
-        			mFreezeFrame = mRgbaFull.clone();
+//        			mFreezeFrame.release();
+//        			mFreezeFrame = mRgbaFull.clone();
 	        		
 	        		//Imgproc.GaussianBlur(handBoundingBox, handBoundingBox, new Size(3, 3), 0);
 	        		
@@ -657,7 +657,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 			        		
 			        		hull_list.add(0,mopOut);
 			        		
-			        		Imgproc.drawContours(mFreezeFrame.submat(origHandBBRect), hull_list, 0, HAND_CONTOUR_COLOR, 2);
+			        		Imgproc.drawContours(mFreezeFrame, hull_list, 0, HAND_CONTOUR_COLOR, 2);
 			        		
 			        		// defect point reduce
 			        		List<Point> vertex_point_list = new ArrayList<Point>();
@@ -705,16 +705,16 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 			        		Point p = new Point();
 			        		p.x = 100;
 			        		p.y = 100;
-			        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num-1), p,
-			        		Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+//			        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num-1), p,
+//			        		Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
 			        		 
 			        		System.out.printf("real number defect =%d\n",real_defect_num);
 	
 			        		for (int k = 0; k < real_defect_num; k++) {
 			        		Point vertex = vertex_point_list.get(k);
 			        		Point defect = defect_point_list.get(k);
-			        		Core.circle(mFreezeFrame.submat(origHandBBRect), vertex, 2, new Scalar(10, 25, 155), 2);
-			        		Core.circle(mFreezeFrame.submat(origHandBBRect), defect, 2, new Scalar(280, 0, 55), 2);
+			        		Core.circle(mFreezeFrame, vertex, 2, new Scalar(10, 25, 155), 2);
+			        		Core.circle(mFreezeFrame, defect, 2, new Scalar(280, 0, 55), 2);
 	
 			        		// double fontScale = 2;
 			        		// Core.putText(rgba, Integer.toString(depth_list[i]), defect,
@@ -724,7 +724,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 	        		}
         		}
         		
-        		Core.rectangle(mFreezeFrame, origHandBBRect.tl(), origHandBBRect.br(), HAND_RECT_COLOR, 2);
+        		//Core.rectangle(mFreezeFrame, origHandBBRect.tl(), origHandBBRect.br(), HAND_RECT_COLOR, 2);
         		
                 
         	}
@@ -755,8 +755,12 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         
 
         
-
-        //mRgbaPrev = mRgbaFull.clone();
+        if (mFrameNum % 5 == 0) {
+        	//Core.addWeighted(mRgbaPrev, 0.8, mRgbaFull, 0.2, 0, mRgbaPrev);
+        	mRgbaPrev.release();
+        	mRgbaPrev = mRgbaFull.clone();
+        	
+        }
 		
         return mOutputImage;
     }
