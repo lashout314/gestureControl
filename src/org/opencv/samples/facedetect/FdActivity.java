@@ -27,6 +27,7 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
+import org.opencv.video.BackgroundSubtractorMOG2;
 import org.opencv.video.Video;
 
 import android.app.Activity;
@@ -52,7 +53,11 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
 
     private Mat                    mRgba;
+    private Mat					   mRgbaFull;
+    private Mat					   mRGB;
+    private Mat					   mRgbaPrev;
     private Mat                    mGray;
+    private Mat					   mGrayFull;
     
     private Mat					   mOutputImage;
     
@@ -86,6 +91,9 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private File                   mCascadeFile;
     private CascadeClassifier      mJavaDetector;
     
+    private BackgroundSubtractorMOG2 mBGsub;
+    private Mat						mFGmask;
+    
 
     private int					   mFrameNum = 1;
     private int					   mLastFrame = 1;
@@ -98,6 +106,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private int					   mAbsoluteFaceSizeMax	  = 0;
 
     private CameraBridgeViewBase   mOpenCvCameraView;
+    
+
     
     private MediaPlayer mediaPlayer;
     private TextView songName;
@@ -199,7 +209,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
     public void onCameraViewStarted(int width, int height) {
         mGray = new Mat();
+        mGrayFull = new Mat();
         mRgba = new Mat();
+        mRgbaFull = new Mat();
+        mRGB = new Mat();
         mRedPrev = new Mat();
         mGreenPrev = new Mat();
         mBluePrev = new Mat();
@@ -220,6 +233,9 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mOutputImage = new Mat();
         mFreezeFrame = new Mat();
         
+        mBGsub = new BackgroundSubtractorMOG2();
+        mFGmask = new Mat();
+        
         mSBoundingBox = new MatOfRect();
        
         
@@ -227,7 +243,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
     public void onCameraViewStopped() {
         mGray.release();
+        mGrayFull.release();
         mRgba.release();
+        mRgbaFull.release();
+        mRGB.release();
         mRedPrev.release();
         mGreenPrev.release();
         mBluePrev.release();
@@ -249,20 +268,25 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mSBoundingBox.release();
         mOutputImage.release();
         mFreezeFrame.release();
+        mFGmask.release();
+        
     }
 
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
 
-        mRgba = inputFrame.rgba();
-        mGray = inputFrame.gray();
+        mRgbaFull = inputFrame.rgba();
+        mGrayFull = inputFrame.gray();
         
-        Size origSize = mRgba.size();
+        
+        Size origSize = mRgbaFull.size();
         
         double shrinkFactor = 1/(double)mUndersamplingFactor;
         //Log.d(TAG,"shrinkFactor = "+shrinkFactor);
         
-        Imgproc.resize(mRgba, mRgba, new Size(), shrinkFactor, shrinkFactor, Imgproc.INTER_LINEAR);
-        Imgproc.resize(mGray, mGray, new Size(), shrinkFactor, shrinkFactor, Imgproc.INTER_LINEAR);
+        Imgproc.resize(mRgbaFull, mRgba, new Size(), shrinkFactor, shrinkFactor, Imgproc.INTER_LINEAR);
+        Imgproc.resize(mGrayFull, mGray, new Size(), shrinkFactor, shrinkFactor, Imgproc.INTER_LINEAR);
+        
+        mBGsub.apply(mRgba, mFGmask, 0.01);
         
         int M,N;
         
@@ -280,6 +304,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
              
         
         if (mFrameNum == 1) {
+        	mRgbaPrev = inputFrame.rgba();
+        	
         	mRedPrev = mRed.clone();
         	mGreenPrev = mGreen.clone();
         	mBluePrev = mBlue.clone();
@@ -288,6 +314,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         Core.absdiff(mRed, mRedPrev, mRedDiff);
         Core.absdiff(mGreen, mGreenPrev, mGreenDiff);
         Core.absdiff(mBlue, mBluePrev, mBlueDiff);
+        
+        mRedPrev.release();
+        mGreenPrev.release();
+        mBluePrev.release();
         
         mRedPrev = mRed.clone();
         mGreenPrev = mGreen.clone();
@@ -395,6 +425,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
         
         double minArea = mMinBBArea * mGrayDiff.rows()*mGrayDiff.cols();
+        
+//        mFreezeFrame.release();
+//        mFreezeFrame = mGray.clone();
+//        Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
 
 
         for (int i = 0; i < motionArray.length; i++) {
@@ -433,10 +467,11 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
         	double aionormallized = 1000*amplitudeInOrientation/(Math.sqrt(motionArray[i].area()));
         	
-        	if (aionormallized>1000 && motionArray[i].area()>minArea) {
+        	if (aionormallized>1000 && motionArray[i].area()>minArea && whratio>1.5) {
         		
-                mFreezeFrame = mGrayDiff.clone();
-                Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
+//        		mFreezeFrame.release();
+//                mFreezeFrame = mGrayDiff.clone();
+//                Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
         		
         		mLastFrame = mFrameNum;
         		
@@ -454,15 +489,15 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         		
         		
         		if (orientationDegrees>270+45)
-        			handBBRect = new Rect(x+w-h,y,(int)(handBBRectMargin*h),h);
+        			handBBRect = new Rect(Math.round(x+w-((0.9f)*h)),y,h,h);
         		else if (orientationDegrees>180+45)
-        			handBBRect = new Rect(x,y,w,(int)(handBBRectMargin*w));
+        			handBBRect = new Rect(x,Math.round(y-((0.1f)*w)),w,w);
         		else if (orientationDegrees>90+45)
-        			handBBRect = new Rect(x,y,(int)(handBBRectMargin*h),h);
+        			handBBRect = new Rect(Math.round(x-((0.1f)*h)),y,h,h);
         		else if (orientationDegrees>0+45)
-        			handBBRect = new Rect(x,y+h-w,w,(int)(handBBRectMargin*w));
+        			handBBRect = new Rect(x,Math.round(y+h-(0.9f*w)),w,w);
         		else
-        			handBBRect = new Rect(x+w-h,y,(int)(handBBRectMargin*h),h);
+        			handBBRect = new Rect(Math.round(x+w-((0.9f)*h)),y,h,h);
         		
         		boolean handBBRectValid = true;
         		
@@ -485,14 +520,80 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         			Log.d(TAG,"handBBRect M="+M+" N="+N);
         		}
         		
+        		origHandBBRect = new Rect(handBBRect.x*mUndersamplingFactor,handBBRect.y*mUndersamplingFactor,handBBRect.width*mUndersamplingFactor,handBBRect.height*mUndersamplingFactor);
+        		
         		if (handBBRectValid) {
         			
+        			// extract origHandBBRect from hi rez images
         			
+//        			Log.d(TAG,"mRgbasize = "+mRgbaPrev.size()+" "+origHandBBRect.x + " "+origHandBBRect.y + " "+origHandBBRect.size());
+//        			
+//        			
+//        			Mat rgbPrevBB = mRgbaPrev.submat(origHandBBRect);
+//        			Mat rgbBB = inputFrame.rgba().submat(origHandBBRect);
+//        			
+//        			Mat rPrevBB = new Mat();
+//        			Mat rBB = new Mat();
+//        			
+//        			Mat gPrevBB = new Mat();
+//        			Mat gBB = new Mat();
+//        			
+//        			Mat bPrevBB = new Mat();
+//        			Mat bBB = new Mat();
+//        			
+//        			Mat rDiff = new Mat();
+//        			Mat gDiff = new Mat();
+//        			Mat bDiff = new Mat();
+//        			
+//        			Core.extractChannel(rgbPrevBB, rPrevBB, 0);
+//        			Core.extractChannel(rgbPrevBB, gPrevBB, 1);
+//        			Core.extractChannel(rgbPrevBB, bPrevBB, 2);
+//        			
+//        			Core.extractChannel(rgbBB, rBB, 0);
+//        			Core.extractChannel(rgbBB, gBB, 1);
+//        			Core.extractChannel(rgbBB, bBB, 2);
+//        			
+//        			Core.absdiff(rBB, rPrevBB, rDiff);
+//        	        Core.absdiff(gBB, gPrevBB, gDiff);
+//        	        Core.absdiff(bBB, bPrevBB, bDiff);
+//        	        
+//        	        Imgproc.threshold(rDiff, rDiff, 25, 255, Imgproc.THRESH_BINARY);
+//        	        Imgproc.threshold(gDiff, gDiff, 25, 255, Imgproc.THRESH_BINARY);
+//        	        Imgproc.threshold(bDiff, bDiff, 25, 255, Imgproc.THRESH_BINARY);
+//        	        
+//        	        List<Mat> rgbBBSplit = new ArrayList<Mat>(3);
+//        	        
+//        	        
+//        	        rgbBBSplit.add(0, rDiff);
+//        	        rgbBBSplit.add(1, rDiff);
+//        	        rgbBBSplit.add(2, bDiff);
+//        	        
+//        	        Mat handBoundingBox = new Mat();
+//        	        
+//        	        rgbBB.release();
+//        	        
+//        	        Core.merge(rgbBBSplit, rgbBB);
+//        	        Imgproc.cvtColor(rgbBB, handBoundingBox, Imgproc.COLOR_RGB2GRAY);
+        	        
+
         		
-	        		Mat handBoundingBox = mGrayDiff.submat(handBBRect).clone();
-	        		
-	        		mFreezeFrame = handBoundingBox.clone();
-	        		Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
+        			Mat handBoundingBox = mFGmask.submat(handBBRect);
+        			
+//        	        Mat kernelBB = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3,3));
+//        	        
+//        	        //Imgproc.erode(handBoundingBox, handBoundingBox, kernelBB);
+//        	        
+//  
+//        	        Imgproc.dilate(handBoundingBox, handBoundingBox, kernelBB);
+        	     
+        	        //Imgproc.threshold(handBoundingBox, handBoundingBox, 15, 255, Imgproc.THRESH_BINARY);
+        			
+//	        		mFreezeFrame.release();
+//	        		mFreezeFrame = handBoundingBox.clone();
+//	        		Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
+        			
+        			mFreezeFrame.release();
+        			mFreezeFrame = mRgba.clone();
 	        		
 	        		//Imgproc.GaussianBlur(handBoundingBox, handBoundingBox, new Size(3, 3), 0);
 	        		
@@ -531,91 +632,93 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 		        		new_contour.convertTo(contour, CvType.CV_32S); 
 		        		 
 		        		Imgproc.convexHull(contour, hull);
+		        		
+		        		if (contour.size().height>3) {
 		
-		        		Imgproc.convexityDefects(contour, hull, defects);
+			        		Imgproc.convexityDefects(contour, hull, defects);
+			
+			        		long defect_num = defects.total();
+			        		
+			        		// hull to matofpoint
+			        		MatOfPoint mopOut = new MatOfPoint();
+			        		mopOut.create((int)hull.size().height,1,CvType.CV_32SC2);
 		
-		        		long defect_num = defects.total();
-		        		
-		        		// hull to matofpoint
-		        		MatOfPoint mopOut = new MatOfPoint();
-		        		mopOut.create((int)hull.size().height,1,CvType.CV_32SC2);
+			        		for(int j = 0; j < hull.size().height ; j++)
+			        		{
+			        		   int index = (int)hull.get(j, 0)[0];
+			        		   double[] point = new double[] {
+			        		       contour.get(index, 0)[0], contour.get(index, 0)[1]
+			        		   };
+			        		   mopOut.put(j, 0, point);
+			        		}        
+			        		
+			        		List <MatOfPoint> hull_list = new ArrayList<MatOfPoint>();
+			        		
+			        		hull_list.add(0,mopOut);
+			        		
+			        		Imgproc.drawContours(mFreezeFrame.submat(handBBRect), hull_list, 0, HAND_CONTOUR_COLOR, 2);
+			        		
+			        		// defect point reduce
+			        		List<Point> vertex_point_list = new ArrayList<Point>();
+			        		List<Point> defect_point_list = new ArrayList<Point>();
+			        		int[] depth_list = new int[(int) defect_num];
 	
-		        		for(int j = 0; j < hull.size().height ; j++)
-		        		{
-		        		   int index = (int)hull.get(j, 0)[0];
-		        		   double[] point = new double[] {
-		        		       contour.get(index, 0)[0], contour.get(index, 0)[1]
-		        		   };
-		        		   mopOut.put(j, 0, point);
-		        		}        
-		        		
-		        		List <MatOfPoint> hull_list = new ArrayList<MatOfPoint>();
-		        		
-		        		hull_list.add(0,mopOut);
-		        		
-		        		Imgproc.drawContours(mFreezeFrame, hull_list, 0, HAND_CONTOUR_COLOR, 2);
-		        		
-		        		// defect point reduce
-		        		List<Point> vertex_point_list = new ArrayList<Point>();
-		        		List<Point> defect_point_list = new ArrayList<Point>();
-		        		int[] depth_list = new int[(int) defect_num];
-
-		        		int DEPTH_THRESHOLD = 30000;
-		        		int real_defect_num = 0;
-
-		        		double[] point = new double[] { 0, 0 };
-		        		Point current = new Point(point);
-
-		        		int depth, index;
-		        		
-		        		Log.d(TAG,"Defect_num = "+ defect_num);
-		        		
-		        		for (int j = 0; j < (int) defect_num; j++) {
-
-			        		depth = (int) defects.get(j, 0)[3];
-//			        		if (depth < DEPTH_THRESHOLD)
-//			        			continue;
+			        		int DEPTH_THRESHOLD = 2000;
+			        		int real_defect_num = 0;
 	
-			        		Log.d(TAG, "defect depth=" + depth);
-			        		depth_list[real_defect_num] = depth;
-			        		real_defect_num++;
+			        		double[] point = new double[] { 0, 0 };
+			        		Point current = new Point(point);
 	
-			        		index = (int) defects.get(j, 0)[0];
+			        		int depth, index;
+			        		
+			        		Log.d(TAG,"Defect_num = "+ defect_num);
+			        		
+			        		for (int j = 0; j < (int) defect_num; j++) {
+	
+				        		depth = (int) defects.get(j, 0)[3];
+				        		if (depth < DEPTH_THRESHOLD)
+				        			continue;
+		
+				        		Log.d(TAG, "defect depth=" + depth);
+				        		depth_list[real_defect_num] = depth;
+				        		real_defect_num++;
+		
+				        		index = (int) defects.get(j, 0)[0];
+				        		 
+				        		current = new Point(contour.get(index, 0)[0],contour.get(index, 0)[1]);
+				        		 
+				        		// current.x = contour.get(index, 0)[0];
+				        		// current.y = contour.get(index, 0)[1];
+		
+				        		vertex_point_list.add(current);
+		
+				        		index = (int) defects.get(j, 0)[2];
+		
+				        		// current.x = contour.get(index, 0)[0];
+				        		// current.y = contour.get(index, 0)[1];
+				        		current = new Point(contour.get(index, 0)[0],contour.get(index, 0)[1]);
+				        		defect_point_list.add(current);
+	
+			        		}
 			        		 
-			        		current = new Point(contour.get(index, 0)[0],contour.get(index, 0)[1]);
+//			        		Point p = new Point();
+//			        		p.x = 100;
+//			        		p.y = 100;
+//			        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num-1), p,
+//			        		Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
 			        		 
-			        		// current.x = contour.get(index, 0)[0];
-			        		// current.y = contour.get(index, 0)[1];
+			        		System.out.printf("real number defect =%d\n",real_defect_num);
 	
-			        		vertex_point_list.add(current);
+			        		for (int k = 0; k < real_defect_num; k++) {
+			        		Point vertex = vertex_point_list.get(k);
+			        		Point defect = defect_point_list.get(k);
+			        		Core.circle(mFreezeFrame.submat(handBBRect), vertex, 2, new Scalar(10, 25, 155), 2);
+			        		Core.circle(mFreezeFrame.submat(handBBRect), defect, 2, new Scalar(280, 0, 55), 2);
 	
-			        		index = (int) defects.get(j, 0)[2];
-	
-			        		// current.x = contour.get(index, 0)[0];
-			        		// current.y = contour.get(index, 0)[1];
-			        		current = new Point(contour.get(index, 0)[0],contour.get(index, 0)[1]);
-			        		defect_point_list.add(current);
-
-		        		}
-		        		 
-		        		Point p = new Point();
-		        		p.x = 100;
-		        		p.y = 100;
-		        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num-1), p,
-		        		Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
-		        		 
-		        		System.out.printf("real number defect =%d\n",real_defect_num);
-
-		        		for (int k = 0; k < real_defect_num; k++) {
-		        		Point vertex = vertex_point_list.get(k);
-		        		Point defect = defect_point_list.get(k);
-		        		Core.circle(mFreezeFrame, vertex, 2, new Scalar(10, 25, 155), 2);
-		        		Core.circle(mFreezeFrame, defect, 2, new Scalar(280, 0, 55), 2);
-
-		        		// double fontScale = 2;
-		        		// Core.putText(rgba, Integer.toString(depth_list[i]), defect,
-		        		// Core.FONT_HERSHEY_SIMPLEX, fontScale, mWhilte, 3);
-
+			        		// double fontScale = 2;
+			        		// Core.putText(rgba, Integer.toString(depth_list[i]), defect,
+			        		// Core.FONT_HERSHEY_SIMPLEX, fontScale, mWhilte, 3);
+			        		}
 		        		}
 	        		}
         		}
@@ -626,7 +729,6 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         	}
         }
             
-
         
         
         Mat flippedOutput = new Mat();
@@ -649,6 +751,11 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mRgbaSplit.clear();
         
         mFrameNum ++;
+        
+
+        
+
+        //mRgbaPrev = mRgbaFull.clone();
 		
         return mOutputImage;
     }
