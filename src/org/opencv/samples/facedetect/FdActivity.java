@@ -47,6 +47,18 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private static final Scalar	   HAND_CONTOUR_COLOR  = new Scalar(0, 255, 0);
     private static final Scalar	   WHITE			   = new Scalar(255,255,255);
     
+    private static int			   COMMAND_TIMEOUT_TIME = 1;
+    
+    
+    private static enum			   COMMAND_TYPE {
+    	UP,
+    	DOWN,
+    	LEFT,
+    	RIGHT
+    }
+    private COMMAND_TYPE		   mCommand;
+    private boolean				   mCommandValid=false;
+    
     private int					   mUndersamplingFactor = 4;
     private int					   mErosionKernelSize = 44;
     private float				   mMinBBArea = 0.01f;
@@ -111,7 +123,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     
     private MediaPlayer mediaPlayer;
     private TextView songName;
-    private int mVolume = 6, maxVolume = 10, minVolume = 2;
+    private float mVolume = 6, maxVolume = 1.0f, minVolume = 0.2f;
     private double startTime = 0;
     private double endTime = 0;
     
@@ -423,6 +435,13 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         
         Mat localOrientation, localMmask, localMhi;
         
+        boolean commandTimeOut;
+    	
+    	if (mFrameNum > mLastFrame + COMMAND_TIMEOUT_TIME)
+    		commandTimeOut = false;
+    	else
+    		commandTimeOut = true;
+        
 
         
         double minArea = mMinBBArea * mGrayDiff.rows()*mGrayDiff.cols();
@@ -489,16 +508,22 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         		double handBBRectMargin = 1;
         		
         		
-        		if (orientationDegrees>270+45)
+        		if (orientationDegrees>270+45) {
         			handBBRect = new Rect(Math.round(x+w-((0.9f)*h)),y,h,h);
-        		else if (orientationDegrees>180+45)
+        			mCommand = COMMAND_TYPE.RIGHT;
+        		} else if (orientationDegrees>180+45) {
         			handBBRect = new Rect(x,Math.round(y-((0.1f)*w)),w,w);
-        		else if (orientationDegrees>90+45)
+        			mCommand = COMMAND_TYPE.DOWN;
+        		} else if (orientationDegrees>90+45) {
         			handBBRect = new Rect(Math.round(x-((0.1f)*h)),y,h,h);
-        		else if (orientationDegrees>0+45)
+        			mCommand = COMMAND_TYPE.LEFT;
+        		} else if (orientationDegrees>0+45) {
         			handBBRect = new Rect(x,Math.round(y+h-(0.9f*w)),w,w);
-        		else
+        			mCommand = COMMAND_TYPE.UP;
+        		} else {
         			handBBRect = new Rect(Math.round(x+w-((0.9f)*h)),y,h,h);
+        			mCommand = COMMAND_TYPE.RIGHT;
+        		}
         		
         		boolean handBBRectValid = true;
         		
@@ -720,11 +745,43 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 			        		// Core.putText(rgba, Integer.toString(depth_list[i]), defect,
 			        		// Core.FONT_HERSHEY_SIMPLEX, fontScale, mWhilte, 3);
 			        		}
+			        		if (real_defect_num>3) {
+			        			mCommandValid = true;
+			        			mLastFrame = mFrameNum;
+			        		}
 		        		}
 	        		}
         		}
         		
         		//Core.rectangle(mFreezeFrame, origHandBBRect.tl(), origHandBBRect.br(), HAND_RECT_COLOR, 2);
+        		
+        		Point p = new Point();
+    	    	p.x = 100;
+    	    	p.y = 100;
+            	
+            	if (mCommandValid && !commandTimeOut) {
+            		
+            		if (mCommand == COMMAND_TYPE.UP) {
+            			mediaPlayer.setVolume(maxVolume, maxVolume);
+            			Core.putText(mFreezeFrame, "UP", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+            		}
+            		
+    				if (mCommand == COMMAND_TYPE.DOWN) {
+    					mediaPlayer.setVolume(minVolume, minVolume); 
+    					Core.putText(mFreezeFrame, "DOWN", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    				}
+    				
+    				if (mCommand == COMMAND_TYPE.LEFT) {
+    					mediaPlayer.start();
+    					Core.putText(mFreezeFrame, "LEFT", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    				}
+    				
+    				if (mCommand == COMMAND_TYPE.RIGHT) {
+    					mediaPlayer.stop();
+    					Core.putText(mFreezeFrame, "RIGHT", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    				}
+            		
+            	}
         		
                 
         	}
