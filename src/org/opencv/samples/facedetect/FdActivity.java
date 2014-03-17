@@ -48,7 +48,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private static final Scalar	   WHITE			   = new Scalar(255,255,255);
     
     private int					   mUndersamplingFactor = 4;
-    private int					   mErosionKernelSize = 36;
+    private int					   mErosionKernelSize = 44;
     private float				   mMinBBArea = 0.01f;
 
 
@@ -286,7 +286,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         Imgproc.resize(mRgbaFull, mRgba, new Size(), shrinkFactor, shrinkFactor, Imgproc.INTER_LINEAR);
         Imgproc.resize(mGrayFull, mGray, new Size(), shrinkFactor, shrinkFactor, Imgproc.INTER_LINEAR);
         
-        mBGsub.apply(mRgba, mFGmask, 0.01);
+
+        //mBGsub.apply(mRgbaFull, mFGmask, 0.01);
         
         int M,N;
         
@@ -467,7 +468,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 
         	double aionormallized = 1000*amplitudeInOrientation/(Math.sqrt(motionArray[i].area()));
         	
-        	if (aionormallized>1000 && motionArray[i].area()>minArea && whratio>1.5) {
+        	if (aionormallized>1000 && motionArray[i].area()>minArea && whratio>1.2) {
         		
 //        		mFreezeFrame.release();
 //                mFreezeFrame = mGrayDiff.clone();
@@ -577,7 +578,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         	        
 
         		
-        			Mat handBoundingBox = mFGmask.submat(handBBRect);
+        			Mat handBoundingBox = mFGmask.submat(origHandBBRect);
         			
 //        	        Mat kernelBB = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3,3));
 //        	        
@@ -593,7 +594,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 //	        		Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
         			
         			mFreezeFrame.release();
-        			mFreezeFrame = mRgba.clone();
+        			mFreezeFrame = mRgbaFull.clone();
 	        		
 	        		//Imgproc.GaussianBlur(handBoundingBox, handBoundingBox, new Size(3, 3), 0);
 	        		
@@ -656,7 +657,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 			        		
 			        		hull_list.add(0,mopOut);
 			        		
-			        		Imgproc.drawContours(mFreezeFrame.submat(handBBRect), hull_list, 0, HAND_CONTOUR_COLOR, 2);
+			        		Imgproc.drawContours(mFreezeFrame.submat(origHandBBRect), hull_list, 0, HAND_CONTOUR_COLOR, 2);
 			        		
 			        		// defect point reduce
 			        		List<Point> vertex_point_list = new ArrayList<Point>();
@@ -701,19 +702,19 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 	
 			        		}
 			        		 
-//			        		Point p = new Point();
-//			        		p.x = 100;
-//			        		p.y = 100;
-//			        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num-1), p,
-//			        		Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+			        		Point p = new Point();
+			        		p.x = 100;
+			        		p.y = 100;
+			        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num-1), p,
+			        		Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
 			        		 
 			        		System.out.printf("real number defect =%d\n",real_defect_num);
 	
 			        		for (int k = 0; k < real_defect_num; k++) {
 			        		Point vertex = vertex_point_list.get(k);
 			        		Point defect = defect_point_list.get(k);
-			        		Core.circle(mFreezeFrame.submat(handBBRect), vertex, 2, new Scalar(10, 25, 155), 2);
-			        		Core.circle(mFreezeFrame.submat(handBBRect), defect, 2, new Scalar(280, 0, 55), 2);
+			        		Core.circle(mFreezeFrame.submat(origHandBBRect), vertex, 2, new Scalar(10, 25, 155), 2);
+			        		Core.circle(mFreezeFrame.submat(origHandBBRect), defect, 2, new Scalar(280, 0, 55), 2);
 	
 			        		// double fontScale = 2;
 			        		// Core.putText(rgba, Integer.toString(depth_list[i]), defect,
@@ -723,7 +724,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 	        		}
         		}
         		
-        		Core.rectangle(mFreezeFrame, handBBRect.tl(), handBBRect.br(), HAND_RECT_COLOR, 2);
+        		Core.rectangle(mFreezeFrame, origHandBBRect.tl(), origHandBBRect.br(), HAND_RECT_COLOR, 2);
         		
                 
         	}
