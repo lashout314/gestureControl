@@ -110,6 +110,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private int					   mFrameNum = 1;
     private int					   mLastFrame = 1;
     
+    private int					   mDefectNum = 0;
+    
 
     private float                  mRelativeFaceSizeMin   = 0.05f;
     private float                  mRelativeFaceSizeMax   = 0.5f;
@@ -126,6 +128,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private float mVolume = 6, maxVolume = 1.0f, minVolume = 0.2f;
     private double startTime = 0;
     private double endTime = 0;
+    
+    
     
 
     private BaseLoaderCallback  mLoaderCallback = new BaseLoaderCallback(this) {
@@ -449,6 +453,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 //        mFreezeFrame.release();
 //        mFreezeFrame = mGray.clone();
 //        Imgproc.cvtColor(mFreezeFrame, mFreezeFrame, Imgproc.COLOR_GRAY2RGB);
+        
+        double bestGestureAIO = 0;
 
 
         for (int i = 0; i < motionArray.length; i++) {
@@ -468,7 +474,6 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         		orientationAngle = orientationAngle - 180;
         	else if (orientationAngle>90) {
         		orientationAngle = 180 - orientationAngle;
-        		//mediaPlayer.start();
         	}
         	
         	orientationRadians = orientationAngle * 2 * (Math.PI) / 360;
@@ -507,22 +512,24 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         		Rect handBBRect,origHandBBRect;
         		double handBBRectMargin = 1;
         		
+        		COMMAND_TYPE thisCommand;
+        		
         		
         		if (orientationDegrees>270+45) {
         			handBBRect = new Rect(Math.round(x+w-((0.9f)*h)),y,h,h);
-        			mCommand = COMMAND_TYPE.RIGHT;
+        			thisCommand = COMMAND_TYPE.RIGHT;
         		} else if (orientationDegrees>180+45) {
         			handBBRect = new Rect(x,Math.round(y-((0.1f)*w)),w,w);
-        			mCommand = COMMAND_TYPE.DOWN;
+        			thisCommand = COMMAND_TYPE.DOWN;
         		} else if (orientationDegrees>90+45) {
         			handBBRect = new Rect(Math.round(x-((0.1f)*h)),y,h,h);
-        			mCommand = COMMAND_TYPE.LEFT;
+        			thisCommand = COMMAND_TYPE.LEFT;
         		} else if (orientationDegrees>0+45) {
         			handBBRect = new Rect(x,Math.round(y+h-(0.9f*w)),w,w);
-        			mCommand = COMMAND_TYPE.UP;
+        			thisCommand = COMMAND_TYPE.UP;
         		} else {
         			handBBRect = new Rect(Math.round(x+w-((0.9f)*h)),y,h,h);
-        			mCommand = COMMAND_TYPE.RIGHT;
+        			thisCommand = COMMAND_TYPE.RIGHT;
         		}
         		
         		boolean handBBRectValid = true;
@@ -699,6 +706,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 			        		
 			        		Log.d(TAG,"Defect_num = "+ defect_num);
 			        		
+			        		double mean_depth=0;
+			        		
 			        		for (int j = 0; j < (int) defect_num; j++) {
 	
 				        		depth = (int) defects.get(j, 0)[3];
@@ -708,6 +717,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 				        		Log.d(TAG, "defect depth=" + depth);
 				        		depth_list[real_defect_num] = depth;
 				        		real_defect_num++;
+				        		
+				        		mean_depth = mean_depth + depth;
 		
 				        		index = (int) defects.get(j, 0)[0];
 				        		 
@@ -726,29 +737,64 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 				        		defect_point_list.add(current);
 	
 			        		}
+			        		
+			        		mean_depth = mean_depth/real_defect_num;
+			        		
+			        		Log.d(TAG,"Mean Depth= " + mean_depth);
+			        		
+			        		//calculate depth variance
+			        		
+			        		double variance_depth=0;
+			        		
+			        		for (int j=0;j<real_defect_num;j++) {
+			        			
+			        			variance_depth = variance_depth + (Math.pow((depth_list[j]-mean_depth),2));
+			        			
+			        		}
+			        		
+			        		variance_depth = variance_depth/real_defect_num;
+			        		
+			        		double normalized_variance_depth = Math.sqrt(variance_depth/Math.sqrt(maxArea));
+			        		
+			        		Log.d(TAG,"Normal Variance Depth= " + normalized_variance_depth);
 			        		 
 			        		Point p = new Point();
-			        		p.x = 100;
-			        		p.y = 100;
-//			        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num-1), p,
+			        		p.x = 1;
+			        		p.y = 1;
+//			        		Core.putText(mFreezeFrame, Integer.toString(real_defect_num), p,
 //			        		Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
 			        		 
 			        		System.out.printf("real number defect =%d\n",real_defect_num);
 	
 			        		for (int k = 0; k < real_defect_num; k++) {
-			        		Point vertex = vertex_point_list.get(k);
-			        		Point defect = defect_point_list.get(k);
-			        		Core.circle(mFreezeFrame, vertex, 2, new Scalar(10, 25, 155), 2);
-			        		Core.circle(mFreezeFrame, defect, 2, new Scalar(280, 0, 55), 2);
-	
-			        		// double fontScale = 2;
-			        		// Core.putText(rgba, Integer.toString(depth_list[i]), defect,
-			        		// Core.FONT_HERSHEY_SIMPLEX, fontScale, mWhilte, 3);
+				        		Point vertex = vertex_point_list.get(k);
+				        		Point defect = defect_point_list.get(k);
+				        		Core.circle(mFreezeFrame, vertex, 2, new Scalar(10, 25, 155), 2);
+				        		Core.circle(mFreezeFrame, defect, 2, new Scalar(280, 0, 55), 2);
+		
+				        		// double fontScale = 2;
+				        		// Core.putText(rgba, Integer.toString(depth_list[i]), defect,
+				        		// Core.FONT_HERSHEY_SIMPLEX, fontScale, mWhilte, 3);
 			        		}
-			        		if (real_defect_num>3) {
-			        			mCommandValid = true;
-			        			mLastFrame = mFrameNum;
+			        		
+			        		if (real_defect_num>5 && normalized_variance_depth<600 && normalized_variance_depth>200) {
+			        			if (amplitudeInOrientation>bestGestureAIO) {
+			        				bestGestureAIO = amplitudeInOrientation;
+			        				mCommand = thisCommand;
+				        			mCommandValid = true;
+				        			mLastFrame = mFrameNum;
+				        			mDefectNum = real_defect_num;
+			        			}
+			        		} else if (real_defect_num>2) {
+			        			if (amplitudeInOrientation>bestGestureAIO) {
+			        				bestGestureAIO = amplitudeInOrientation;
+			        				mCommand = thisCommand;
+				        			mCommandValid = true;
+				        			mLastFrame = mFrameNum;
+				        			mDefectNum = real_defect_num;
+			        			}
 			        		}
+			        		
 		        		}
 	        		}
         		}
@@ -762,24 +808,41 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             	if (mCommandValid && !commandTimeOut) {
             		
             		if (mCommand == COMMAND_TYPE.UP) {
+            			
+            			if(mDefectNum>5) {
+            			if(mediaPlayer.isPlaying())
             			mediaPlayer.setVolume(maxVolume, maxVolume);
-            			Core.putText(mFreezeFrame, "UP", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+            			//Core.putText(mFreezeFrame, "UP", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+            			Log.d(TAG,"Command = UP");
+            			} else if (mDefectNum>2) {
+            				if(mediaPlayer.isPlaying()) {
+            					mediaPlayer.seekTo(30000);
+            				}
+            			}
             		}
             		
     				if (mCommand == COMMAND_TYPE.DOWN) {
+    					if(mediaPlayer.isPlaying())
     					mediaPlayer.setVolume(minVolume, minVolume); 
-    					Core.putText(mFreezeFrame, "DOWN", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    					//Core.putText(mFreezeFrame, "DOWN", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    					Log.d(TAG,"Command = DOWN");
     				}
     				
     				if (mCommand == COMMAND_TYPE.LEFT) {
+    					if(!mediaPlayer.isPlaying())
     					mediaPlayer.start();
-    					Core.putText(mFreezeFrame, "LEFT", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    					//Core.putText(mFreezeFrame, "LEFT", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    					Log.d(TAG,"Command = LEFT");
     				}
     				
     				if (mCommand == COMMAND_TYPE.RIGHT) {
-    					mediaPlayer.stop();
-    					Core.putText(mFreezeFrame, "RIGHT", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    					if(mediaPlayer.isPlaying())
+    						mediaPlayer.pause();
+    					//Core.putText(mFreezeFrame, "RIGHT", p,Core.FONT_HERSHEY_SIMPLEX, 2, WHITE, 3);
+    					Log.d(TAG,"Command = RIGHT");
     				}
+    				
+    				commandTimeOut = true;
             		
             	}
         		

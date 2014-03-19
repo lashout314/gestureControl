@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OCV Face Detection</string>
-</resources>
+    <string name="app_name">OCV Image Manipulations</string>
+   <string name="action_settings">Settings</string> 
+   <string name="hello_world">Now Playing:</string>
+   <string name="inital_Time">0 min, 0 sec</string>    
+   <string name="desc">point</string>
+      <string name="desc2">point2</string>
+   
+         <string name="desc3">point3</string>
+                  <string name="desc4">point3</string>
+         
+                           <string name="desc5">point3</string>
+                  </resources>
